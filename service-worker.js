@@ -14,7 +14,7 @@
 //               after CORE_CACHE is bumped for an unrelated code
 //               update. Only bump ASSET_CACHE's version if the icons
 //               or sample sounds themselves are replaced.
-var CORE_CACHE = "kids-piano-core-v8";
+var CORE_CACHE = "kids-piano-core-v9";
 var ASSET_CACHE = "kids-piano-assets-v1";
 
 var CORE_ASSETS = [
