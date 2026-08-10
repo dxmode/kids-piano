@@ -193,9 +193,21 @@ body{
 .scroll-arrow-left{ left:18px; }
 .scroll-arrow-right{ right:18px; }
 
-.keyboard-scroll{
+/*.keyboard-scroll{
   height:100%;
   width:100%;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  border-radius:18px;
+  background:var(--ink);
+}*/
+.keyboard-scroll{
+  position:absolute;
+  top:10px;
+  right:10px;
+  bottom:14px;
+  left:10px;
   overflow-x:auto;
   overflow-y:hidden;
   -webkit-overflow-scrolling:touch;
