@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ピアノ</title>
+
+<!-- iOS 12.5.8 Safari: lock viewport, disable native pinch-zoom (we implement our own) -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+
+<!-- PWA / Add to Home Screen -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ピアノ">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#FFD166">
+<meta name="format-detection" content="telephone=no">
+
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+<link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="rotate-hint" class="rotate-hint">
+    <div class="rotate-hint-icon">↻</div>
+    <div class="rotate-hint-text">タブレットを横向きにしてね</div>
+  </div>
+
+  <div id="app" class="app">
+
+    <header class="topbar">
+      <div class="brand">🎹 <span>ピアノ</span></div>
+      <div class="controls">
+        <button id="btn-names" class="pill-btn is-on" type="button" aria-pressed="true">
+          <span class="pill-icon">🔤</span>おとのなまえ
+        </button>
+        <button id="btn-reset-size" class="pill-btn" type="button">
+          <span class="pill-icon">↔️</span>おおきさをもどす
+        </button>
+      </div>
+    </header>
+
+    <main class="stage">
+      <div id="keyboard-scroll" class="keyboard-scroll">
+        <div id="keyboard" class="keyboard"></div>
+      </div>
+    </main>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
