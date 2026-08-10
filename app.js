@@ -26,6 +26,8 @@
   var btnSizeMinus = document.getElementById("btn-size-minus");
   var btnSizePlus = document.getElementById("btn-size-plus");
   var sizeLabel = document.getElementById("size-label");
+  var btnScrollLeft = document.getElementById("btn-scroll-left");
+  var btnScrollRight = document.getElementById("btn-scroll-right");
   var startOverlay = document.getElementById("start-overlay");
   var SCALE_STEP = 10;
 
@@ -129,15 +131,82 @@
     });
 
     sizeLabel.textContent = Math.round(scalePct) + "%";
+    updateScrollArrows();
   }
 
+  function updateScrollArrows() {
+    var max = keyboardEl.offsetWidth - scrollEl.clientWidth;
+    var canScroll = max > 2;
+    btnScrollLeft.hidden = !canScroll || scrollEl.scrollLeft <= 2;
+    btnScrollRight.hidden = !canScroll || scrollEl.scrollLeft >= max - 2;
+  }
+
+  // Small eased scroll animation (avoids relying on Element.scrollTo's
+  // {behavior:"smooth"}, which iOS 12.5.8 Safari does not support).
+  function animateScrollTo(target) {
+    var start = scrollEl.scrollLeft;
+    var change = target - start;
+    var duration = 220;
+    var startTime = null;
+
+    function step(timestamp) {
+      if (startTime === null) startTime = timestamp;
+      var elapsed = timestamp - startTime;
+      var t = Math.min(1, elapsed / duration);
+      var eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      scrollEl.scrollLeft = start + change * eased;
+      updateScrollArrows();
+      if (t < 1) {
+        requestAnimationFrame(step);
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  function scrollByPage(direction) {
+    var max = keyboardEl.offsetWidth - scrollEl.clientWidth;
+    if (max <= 0) return;
+    var step = scrollEl.clientWidth * 0.8;
+    var target = scrollEl.scrollLeft + direction * step;
+    if (target < 0) target = 0;
+    if (target > max) target = max;
+    animateScrollTo(target);
+  }
+
+  btnScrollLeft.addEventListener("click", function () { scrollByPage(-1); });
+  btnScrollRight.addEventListener("click", function () { scrollByPage(1); });
+  scrollEl.addEventListener("scroll", updateScrollArrows);
+
   // ---------------------------------------------------------------
-  // Audio engine (Web Audio API, synthesized piano-ish tone)
+  // Audio engine
+  //  Primary: real recorded piano notes (Salamander Grand Piano,
+  //  CC-BY 3.0, Alexander Holm), pitch-shifted to nearby notes so a
+  //  small set of samples covers the full C3–C6 range.
+  //  Fallback: the original synthesized tone, used only if sample
+  //  loading ever fails (e.g. first-ever launch with no network).
   // ---------------------------------------------------------------
+  var SAMPLE_DEFS = [
+    { midi: 48, file: "samples/C3.mp3" },
+    { midi: 51, file: "samples/Ds3.mp3" },
+    { midi: 54, file: "samples/Fs3.mp3" },
+    { midi: 57, file: "samples/A3.mp3" },
+    { midi: 60, file: "samples/C4.mp3" },
+    { midi: 63, file: "samples/Ds4.mp3" },
+    { midi: 66, file: "samples/Fs4.mp3" },
+    { midi: 69, file: "samples/A4.mp3" },
+    { midi: 72, file: "samples/C5.mp3" },
+    { midi: 75, file: "samples/Ds5.mp3" },
+    { midi: 78, file: "samples/Fs5.mp3" },
+    { midi: 81, file: "samples/A5.mp3" },
+    { midi: 84, file: "samples/C6.mp3" }
+  ];
+
   var AudioEngine = (function () {
     var ctx = null;
     var masterGain = null;
-    var voices = {}; // ownerId -> { midi, nodes }
+    var voices = {}; // ownerId -> { gain, nodes: [...] }
+    var sampleBuffers = {}; // midi -> AudioBuffer
+    var samplesReady = false;
 
     function ensureContext() {
       if (ctx) return;
@@ -173,13 +242,75 @@
       return 440 * Math.pow(2, (midi - 69) / 12);
     }
 
-    function start(ownerId, midi) {
-      ensureContext();
-      unlock();
-      stop(ownerId); // release any note already held by this finger
+    function nearestSample(midi) {
+      var best = null;
+      var bestDist = Infinity;
+      for (var i = 0; i < SAMPLE_DEFS.length; i++) {
+        var d = Math.abs(SAMPLE_DEFS[i].midi - midi);
+        if (d < bestDist) {
+          bestDist = d;
+          best = SAMPLE_DEFS[i];
+        }
+      }
+      return best;
+    }
 
+    // Loads every sample in parallel and decodes it. Resolves once all
+    // attempts are finished (successful or not) — a partial or total
+    // failure just means those notes fall back to the synth tone rather
+    // than the app breaking.
+    function loadSamples(onProgress) {
+      ensureContext();
+      var total = SAMPLE_DEFS.length;
+      var done = 0;
+
+      var tasks = SAMPLE_DEFS.map(function (def) {
+        return fetch(def.file)
+          .then(function (res) { return res.arrayBuffer(); })
+          .then(function (data) {
+            return new Promise(function (resolve, reject) {
+              // decodeAudioData has both a promise form and an older
+              // callback form; the callback form is safest on old Safari.
+              ctx.decodeAudioData(data, resolve, reject);
+            });
+          })
+          .then(function (audioBuffer) {
+            sampleBuffers[def.midi] = audioBuffer;
+          })
+          .catch(function () {
+            // This one note stays on the synth fallback.
+          })
+          .then(function () {
+            done++;
+            if (onProgress) onProgress(done, total);
+          });
+      });
+
+      return Promise.all(tasks).then(function () {
+        samplesReady = Object.keys(sampleBuffers).length > 0;
+      });
+    }
+
+    function startSampleVoice(ownerId, midi, def, now) {
+      var buffer = sampleBuffers[def.midi];
+      var rate = Math.pow(2, (midi - def.midi) / 12);
+
+      var voiceGain = ctx.createGain();
+      voiceGain.gain.setValueAtTime(0, now);
+      voiceGain.gain.linearRampToValueAtTime(1, now + 0.004);
+
+      var src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.playbackRate.value = rate;
+      src.connect(voiceGain);
+      voiceGain.connect(masterGain);
+      src.start(now);
+
+      voices[ownerId] = { gain: voiceGain, nodes: [src] };
+    }
+
+    function startSynthVoice(ownerId, midi, now) {
       var freq = midiToFreq(midi);
-      var now = ctx.currentTime;
 
       var filter = ctx.createBiquadFilter();
       filter.type = "lowpass";
@@ -194,14 +325,27 @@
       var osc1 = ctx.createOscillator();
       osc1.type = "triangle";
       osc1.frequency.value = freq;
-
       osc1.connect(filter);
       filter.connect(voiceGain);
       voiceGain.connect(masterGain);
-
       osc1.start(now);
 
-      voices[ownerId] = { midi: midi, osc1: osc1, gain: voiceGain };
+      voices[ownerId] = { gain: voiceGain, nodes: [osc1] };
+    }
+
+    function start(ownerId, midi) {
+      ensureContext();
+      unlock();
+      stop(ownerId); // release any note already held by this finger
+
+      var now = ctx.currentTime;
+      var def = samplesReady ? nearestSample(midi) : null;
+
+      if (def && sampleBuffers[def.midi]) {
+        startSampleVoice(ownerId, midi, def, now);
+      } else {
+        startSynthVoice(ownerId, midi, now);
+      }
     }
 
     function stop(ownerId) {
@@ -211,8 +355,10 @@
       try {
         v.gain.gain.cancelScheduledValues(now);
         v.gain.gain.setValueAtTime(v.gain.gain.value, now);
-        v.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-        v.osc1.stop(now + 0.17);
+        v.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        v.nodes.forEach(function (n) {
+          try { n.stop(now + 0.25); } catch (e) {}
+        });
       } catch (e) {}
       delete voices[ownerId];
     }
@@ -221,9 +367,13 @@
       Object.keys(voices).forEach(stop);
     }
 
-    return { start: start, stop: stop, stopAll: stopAll, unlock: unlock, currentMidi: function (id) {
-      return voices[id] ? voices[id].midi : null;
-    } };
+    return {
+      start: start,
+      stop: stop,
+      stopAll: stopAll,
+      unlock: unlock,
+      loadSamples: loadSamples
+    };
   })();
 
   // ---------------------------------------------------------------
@@ -351,6 +501,7 @@
     render();
     var max = keyboardEl.offsetWidth - scrollEl.clientWidth;
     scrollEl.scrollLeft = max > 0 ? max * ratioBefore : 0;
+    updateScrollArrows();
   }
 
   btnSizeMinus.addEventListener("click", function () { changeScale(-SCALE_STEP); });
@@ -360,6 +511,7 @@
     writeScale(scalePct);
     render();
     scrollEl.scrollLeft = 0;
+    updateScrollArrows();
   });
 
   // ---------------------------------------------------------------
@@ -387,23 +539,34 @@
 
   // ---------------------------------------------------------------
   // Start overlay
-  //  Priming the AudioContext takes a moment on some Android devices.
-  //  Doing it here (on the "tap to start" tap) means it's finished
-  //  before the child taps their first real key, instead of causing
-  //  a delay on that first note.
+  //  Tapping here does three things before the piano is revealed:
+  //  primes the AudioContext, tries to lock landscape (Android), and
+  //  loads+decodes the real piano samples. Doing all of this here
+  //  (instead of on the first actual key press) means the child's
+  //  first real note has zero loading delay.
   // ---------------------------------------------------------------
+  var startText = document.getElementById("start-text");
+
   function dismissStart() {
+    startOverlay.removeEventListener("touchstart", onStartTap);
+    startOverlay.removeEventListener("mousedown", onStartTap);
+
     AudioEngine.unlock();
     tryLockLandscape();
-    startOverlay.classList.add("is-hidden");
-    startOverlay.removeEventListener("touchstart", dismissStart);
-    startOverlay.removeEventListener("mousedown", dismissStart);
+    startText.textContent = "よみこみちゅう…";
+
+    AudioEngine.loadSamples(function (done, total) {
+      startText.textContent = "よみこみちゅう… (" + done + "/" + total + ")";
+    }).then(function () {
+      startOverlay.classList.add("is-hidden");
+    });
   }
-  startOverlay.addEventListener("touchstart", function (e) {
-    e.preventDefault();
+  function onStartTap(e) {
+    if (e.cancelable) e.preventDefault();
     dismissStart();
-  }, { passive: false });
-  startOverlay.addEventListener("mousedown", dismissStart);
+  }
+  startOverlay.addEventListener("touchstart", onStartTap, { passive: false });
+  startOverlay.addEventListener("mousedown", onStartTap);
 
   // ---------------------------------------------------------------
   // Init
