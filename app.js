@@ -91,10 +91,46 @@
   // ---------------------------------------------------------------
   var baseWhiteWidth = 60; // px at 100% scale, recomputed on resize
 
-  function computeBaseWidth() {
+  /*function computeBaseWidth() {
     var containerW = scrollEl.clientWidth;
     baseWhiteWidth = containerW / totalWhiteKeys;
+  }*/
+  function computeBaseWidth() {
+  var containerW = scrollEl.clientWidth;
+  var containerH = scrollEl.clientHeight;
+  var keyboardW = keyboardEl.clientWidth;
+  var keyboardH = keyboardEl.clientHeight;
+
+  var stageEl = document.querySelector(".stage");
+  var appEl = document.querySelector(".app");
+
+  var debug = document.getElementById("debug-size");
+  if (!debug) {
+    debug = document.createElement("div");
+    debug.id = "debug-size";
+    debug.style.position = "fixed";
+    debug.style.top = "0";
+    debug.style.left = "0";
+    debug.style.zIndex = "9999";
+    debug.style.background = "#000";
+    debug.style.color = "#fff";
+    debug.style.padding = "8px";
+    debug.style.fontSize = "14px";
+    debug.style.fontFamily = "monospace";
   }
+
+  debug.textContent =
+    "window: " + window.innerWidth + " × " + window.innerHeight +
+    "\napp: " + appEl.clientWidth + " × " + appEl.clientHeight +
+    "\nstage: " + stageEl.clientWidth + " × " + stageEl.clientHeight +
+    "\nscroll: " + containerW + " × " + containerH +
+    "\nkeyboard: " + keyboardW + " × " + keyboardH;
+
+  debug.style.whiteSpace = "pre";
+  document.body.appendChild(debug);
+
+  baseWhiteWidth = containerW / totalWhiteKeys;
+}
 
   function render() {
     computeBaseWidth();
