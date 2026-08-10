@@ -273,13 +273,25 @@ body{
 /* ---------- start overlay (primes audio before first key press) ---------- */
 .start-overlay{
   position:fixed;
-  inset:0;
+  top:0;
+  right:0;
+  bottom:0;
+  left:0;
   z-index:60;
   display:flex;
   align-items:center;
   justify-content:center;
   background:var(--coral);
 }
+/*.start-overlay{
+  position:fixed;
+  inset:0;
+  z-index:60;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:var(--coral);
+}*/
 .start-overlay.is-hidden{
   display:none;
 }
