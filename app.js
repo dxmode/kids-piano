@@ -355,9 +355,9 @@
       try {
         v.gain.gain.cancelScheduledValues(now);
         v.gain.gain.setValueAtTime(v.gain.gain.value, now);
-        v.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        v.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
         v.nodes.forEach(function (n) {
-          try { n.stop(now + 0.25); } catch (e) {}
+          try { n.stop(now + 0.95); } catch (e) {}
         });
       } catch (e) {}
       delete voices[ownerId];
