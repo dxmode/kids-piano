@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>ピアノ</title>
 
-<!-- iOS 12.5.8 Safari: lock viewport, disable native pinch-zoom (we implement our own) -->
+<!-- iOS 12.5.8 Safari: lock viewport so a stray pinch never triggers the native page zoom -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
 
 <!-- PWA / Add to Home Screen -->
@@ -31,6 +31,13 @@
     <div class="rotate-hint-text">タブレットを横向きにしてね</div>
   </div>
 
+  <div id="start-overlay" class="start-overlay">
+    <div class="start-card">
+      <div class="start-emoji">🎹</div>
+      <div class="start-text">タップしてはじめる</div>
+    </div>
+  </div>
+
   <div id="app" class="app">
 
     <header class="topbar">
@@ -39,9 +46,11 @@
         <button id="btn-names" class="pill-btn is-on" type="button" aria-pressed="true">
           <span class="pill-icon">🔤</span>おとのなまえ
         </button>
-        <button id="btn-reset-size" class="pill-btn" type="button">
-          <span class="pill-icon">↔️</span>おおきさをもどす
-        </button>
+        <div class="size-group">
+          <button id="btn-size-minus" class="size-btn" type="button" aria-label="鍵盤を小さく">－</button>
+          <button id="size-label" class="size-label" type="button" aria-label="もとの大きさに戻す">100%</button>
+          <button id="btn-size-plus" class="size-btn" type="button" aria-label="鍵盤を大きく">＋</button>
+        </div>
       </div>
     </header>
 

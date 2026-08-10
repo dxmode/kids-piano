@@ -23,7 +23,11 @@
   var keyboardEl = document.getElementById("keyboard");
   var scrollEl = document.getElementById("keyboard-scroll");
   var btnNames = document.getElementById("btn-names");
-  var btnResetSize = document.getElementById("btn-reset-size");
+  var btnSizeMinus = document.getElementById("btn-size-minus");
+  var btnSizePlus = document.getElementById("btn-size-plus");
+  var sizeLabel = document.getElementById("size-label");
+  var startOverlay = document.getElementById("start-overlay");
+  var SCALE_STEP = 10;
 
   // ---------------------------------------------------------------
   // Build note list
@@ -123,14 +127,8 @@
       keyboardEl.appendChild(el);
       keyEls[n.midi] = el;
     });
-  }
 
-  function restoreScroll(preserveRatio) {
-    // Keep the view roughly centred after a resize/rescale.
-    if (preserveRatio == null) return;
-    var max = keyboardEl.offsetWidth - scrollEl.clientWidth;
-    if (max < 0) max = 0;
-    scrollEl.scrollLeft = max * preserveRatio;
+    sizeLabel.textContent = Math.round(scalePct) + "%";
   }
 
   // ---------------------------------------------------------------
@@ -144,16 +142,30 @@
     function ensureContext() {
       if (ctx) return;
       var AC = window.AudioContext || window.webkitAudioContext;
-      ctx = new AC();
+      ctx = new AC({ latencyHint: "interactive" });
       masterGain = ctx.createGain();
       masterGain.gain.value = 0.35; // internal safety ceiling, real volume via device buttons
       masterGain.connect(ctx.destination);
     }
 
+    // Some browsers (notably Chrome on Android) report the AudioContext as
+    // "running" slightly before the audio hardware is actually warmed up,
+    // which shows up as a delay on the very first note. Playing one silent,
+    // zero-length buffer right after resume() forces the pipeline open.
+    function primeSilently() {
+      try {
+        var buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+        var src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(ctx.destination);
+        src.start(0);
+      } catch (e) {}
+    }
+
     function unlock() {
       ensureContext();
       if (ctx.state === "suspended") {
-        ctx.resume();
+        ctx.resume().then(primeSilently);
       }
     }
 
@@ -176,29 +188,20 @@
 
       var voiceGain = ctx.createGain();
       voiceGain.gain.setValueAtTime(0, now);
-      voiceGain.gain.linearRampToValueAtTime(0.9, now + 0.008);
+      voiceGain.gain.linearRampToValueAtTime(0.9, now + 0.006);
       voiceGain.gain.exponentialRampToValueAtTime(0.35, now + 0.35);
 
       var osc1 = ctx.createOscillator();
       osc1.type = "triangle";
       osc1.frequency.value = freq;
 
-      var osc2 = ctx.createOscillator();
-      osc2.type = "sine";
-      osc2.frequency.value = freq * 2;
-      var osc2Gain = ctx.createGain();
-      osc2Gain.gain.value = 0.15;
-
       osc1.connect(filter);
-      osc2.connect(osc2Gain);
-      osc2Gain.connect(filter);
       filter.connect(voiceGain);
       voiceGain.connect(masterGain);
 
       osc1.start(now);
-      osc2.start(now);
 
-      voices[ownerId] = { midi: midi, osc1: osc1, osc2: osc2, gain: voiceGain };
+      voices[ownerId] = { midi: midi, osc1: osc1, gain: voiceGain };
     }
 
     function stop(ownerId) {
@@ -210,7 +213,6 @@
         v.gain.gain.setValueAtTime(v.gain.gain.value, now);
         v.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
         v.osc1.stop(now + 0.17);
-        v.osc2.stop(now + 0.17);
       } catch (e) {}
       delete voices[ownerId];
     }
@@ -228,10 +230,11 @@
   // Touch / pointer handling
   //  - up to 1 finger per note, multitouch across fingers
   //  - sliding a finger across keys glides to the new note
-  //  - a 2-finger gesture on the keyboard is treated as pinch-resize
+  //  - keyboard size is changed via the +/- buttons (see below),
+  //    not by pinch, since 2-finger pinch detection proved unreliable
+  //    across devices (notably Android Chrome)
   // ---------------------------------------------------------------
   var activePointers = {}; // pointerId -> midi
-  var pinch = null; // { startDist, startScale }
 
   function keyElFromPoint(x, y) {
     var el = document.elementFromPoint(x, y);
@@ -268,23 +271,9 @@
     AudioEngine.stop(pointerId);
   }
 
-  function dist(t1, t2) {
-    var dx = t1.clientX - t2.clientX;
-    var dy = t1.clientY - t2.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
   function onTouchStart(e) {
     e.preventDefault();
     AudioEngine.unlock();
-    var touches = e.touches;
-
-    if (touches.length >= 2) {
-      // Switch to pinch mode: release any notes currently held.
-      Object.keys(activePointers).forEach(releasePointer);
-      pinch = { startDist: dist(touches[0], touches[1]), startScale: scalePct };
-      return;
-    }
 
     for (var i = 0; i < e.changedTouches.length; i++) {
       var t = e.changedTouches[i];
@@ -294,18 +283,6 @@
 
   function onTouchMove(e) {
     e.preventDefault();
-    var touches = e.touches;
-
-    if (pinch && touches.length >= 2) {
-      var d = dist(touches[0], touches[1]);
-      var ratio = d / pinch.startDist;
-      var next = pinch.startScale * ratio;
-      if (next < SCALE_MIN) next = SCALE_MIN;
-      if (next > SCALE_MAX) next = SCALE_MAX;
-      scalePct = next;
-      render();
-      return;
-    }
 
     for (var i = 0; i < e.changedTouches.length; i++) {
       var t = e.changedTouches[i];
@@ -316,12 +293,6 @@
 
   function onTouchEnd(e) {
     e.preventDefault();
-    if (pinch) {
-      if (e.touches.length < 2) {
-        pinch = null;
-        writeScale(scalePct);
-      }
-    }
     for (var i = 0; i < e.changedTouches.length; i++) {
       var t = e.changedTouches[i];
       releasePointer(t.identifier);
@@ -365,7 +336,26 @@
     render();
   });
 
-  btnResetSize.addEventListener("click", function () {
+  function clampScale(v) {
+    if (v < SCALE_MIN) return SCALE_MIN;
+    if (v > SCALE_MAX) return SCALE_MAX;
+    return v;
+  }
+
+  function changeScale(delta) {
+    var ratioBefore = keyboardEl.offsetWidth > scrollEl.clientWidth
+      ? scrollEl.scrollLeft / (keyboardEl.offsetWidth - scrollEl.clientWidth)
+      : 0;
+    scalePct = clampScale(scalePct + delta);
+    writeScale(scalePct);
+    render();
+    var max = keyboardEl.offsetWidth - scrollEl.clientWidth;
+    scrollEl.scrollLeft = max > 0 ? max * ratioBefore : 0;
+  }
+
+  btnSizeMinus.addEventListener("click", function () { changeScale(-SCALE_STEP); });
+  btnSizePlus.addEventListener("click", function () { changeScale(SCALE_STEP); });
+  sizeLabel.addEventListener("click", function () {
     scalePct = SCALE_DEFAULT;
     writeScale(scalePct);
     render();
@@ -378,6 +368,42 @@
   window.addEventListener("resize", function () {
     render();
   });
+
+  // ---------------------------------------------------------------
+  // Orientation lock (best-effort)
+  //  iOS Safari has no Screen Orientation Lock API at all, even when
+  //  added to the home screen — this is a hard platform limitation,
+  //  so on iPad this call simply does nothing and the rotate-hint
+  //  screen stays the fallback. On Android, this reinforces the
+  //  manifest's "orientation": "landscape" hint.
+  // ---------------------------------------------------------------
+  function tryLockLandscape() {
+    try {
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock("landscape").catch(function () {});
+      }
+    } catch (e) {}
+  }
+
+  // ---------------------------------------------------------------
+  // Start overlay
+  //  Priming the AudioContext takes a moment on some Android devices.
+  //  Doing it here (on the "tap to start" tap) means it's finished
+  //  before the child taps their first real key, instead of causing
+  //  a delay on that first note.
+  // ---------------------------------------------------------------
+  function dismissStart() {
+    AudioEngine.unlock();
+    tryLockLandscape();
+    startOverlay.classList.add("is-hidden");
+    startOverlay.removeEventListener("touchstart", dismissStart);
+    startOverlay.removeEventListener("mousedown", dismissStart);
+  }
+  startOverlay.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    dismissStart();
+  }, { passive: false });
+  startOverlay.addEventListener("mousedown", dismissStart);
 
   // ---------------------------------------------------------------
   // Init

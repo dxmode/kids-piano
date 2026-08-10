@@ -1,6 +1,6 @@
 // Bump this version string whenever any cached file changes,
 // so the iPad picks up the update instead of serving the old cache.
-var CACHE_NAME = "kids-piano-v2";
+var CACHE_NAME = "kids-piano-v3";
 
 var ASSETS = [
   "./",
